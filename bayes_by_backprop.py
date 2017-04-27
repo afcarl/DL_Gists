@@ -33,11 +33,14 @@ class MLPLayer(nn.Module):
         self.lpw = 0
         self.lqw = 0
 
-    def forward(self, X):
+    def forward(self, X, infer=False):
+        if infer:
+            output = torch.mm(X, self.W_mu) + self.b_mu.expand(X.size()[0], self.n_output)
+            return output
+
         epsilon_W, epsilon_b = self.get_random()
         W = self.W_mu + torch.log(1 + torch.exp(self.W_logsigma)) * epsilon_W
         b = self.b_mu + torch.log(1 + torch.exp(self.b_logsigma)) * epsilon_b
-        # print X.size(), W.size(), b.size()
         output = torch.mm(X, W) + b.expand(X.size()[0], self.n_output)
         self.lpw = log_gaussian(W, 0, self.sigma_prior).sum() + log_gaussian(b, 0, self.sigma_prior).sum()
         self.lqw = log_gaussian_logsigma(W, self.W_mu, self.W_logsigma).sum() + log_gaussian_logsigma(b, self.b_mu, self.b_logsigma).sum()
@@ -57,10 +60,10 @@ class MLP(nn.Module):
         self.l3 = MLPLayer(200, 10, sigma_prior)
         self.l3_softmax = nn.Softmax()
 
-    def forward(self, X):
-        output = self.l1_relu(self.l1(X))
-        output = self.l2_relu(self.l2(output))
-        output = self.l3_softmax(self.l3(output))
+    def forward(self, X, infer=False):
+        output = self.l1_relu(self.l1(X, infer))
+        output = self.l2_relu(self.l2(output, infer))
+        output = self.l3_softmax(self.l3(output, infer))
         return output
 
     def get_lpw_lqw(self):
@@ -133,7 +136,7 @@ for e in xrange(n_epochs):
         optimizer.step()
 
     X = Variable(torch.Tensor(test_data).cuda(), volatile=True)
-    pred = net(X)
+    pred = net(X, infer=True)
     _, out = torch.max(pred, 1)
     acc = np.count_nonzero(np.squeeze(out.data.cpu().numpy()) == np.int32(test_target.ravel())) / float(test_data.shape[0])
 
